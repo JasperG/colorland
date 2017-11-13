@@ -36,6 +36,7 @@ import javax.swing.ImageIcon;
 import javax.swing.JButton;
 import javax.swing.SwingConstants;
 import com.jaspergoes.colorland.workers.Screen;
+import com.jaspergoes.colorland.objects.DisplayDevice;
 import com.jaspergoes.colorland.workers.Milight;
 
 public class MainWindow extends JFrame
@@ -69,8 +70,7 @@ public class MainWindow extends JFrame
 
 	public static boolean VISIBLE;
 
-	/* Unused so far. Not updating displayDevices. Not wasting my time on this..... for now. */
-	public static JComboBox displayDevicesComboBox;
+	public static JComboBox<String> displayDevicesComboBox;
 
 	public static void main(String[] args)
 	{
@@ -105,12 +105,6 @@ public class MainWindow extends JFrame
 		for (int i = 0; i < Milight.milightDevices.size(); i++)
 		{
 			bridgeDevices[i] = Milight.milightDevices.get(i).addrIP + " ( " + Milight.milightDevices.get(i).addrMAC.replaceAll("(.{2})", "$1" + ':').substring(0, 17) + " )";
-		}
-
-		String[] displayDevices = new String[Screen.displayDevices.size()];
-		for (int i = 0; i < Screen.displayDevices.size(); i++)
-		{
-			displayDevices[i] = Screen.displayDevices.get(i).humanReadable;
 		}
 
 		final JLabel sampleSquarePixelsLabel = new JLabel("10000 pixels");
@@ -363,14 +357,13 @@ public class MainWindow extends JFrame
 		controlPanel.add(lblMonitor, gbc_lblMonitor);
 		lblMonitor.requestFocusInWindow();
 
-		displayDevicesComboBox = new JComboBox(displayDevices);
-		displayDevicesComboBox.setSelectedIndex(0);
+		displayDevicesComboBox = new JComboBox<String>();
 		displayDevicesComboBox.addActionListener(new ActionListener() {
 
 			@Override
 			public void actionPerformed(ActionEvent arg0)
 			{
-				Screen.setDisplay(displayDevicesComboBox.getSelectedIndex(), (int) offset_left_right_spinner.getValue(), (int) offset_top_bottom_spinner.getValue());
+				Screen.setDisplay(displayDevicesComboBox.getSelectedIndex());
 			}
 
 		});
@@ -383,6 +376,9 @@ public class MainWindow extends JFrame
 		gbc_displayDevicesComboBox.gridy = 4;
 		controlPanel.add(displayDevicesComboBox, gbc_displayDevicesComboBox);
 
+		/* Populate list of displaydevices (displayDevicesComboBox), and set selected item */
+		updateDisplayDevices();
+		
 		sampleSquare_spinner.addChangeListener(new ChangeListener() {
 			@Override
 			public void stateChanged(ChangeEvent e)
@@ -439,7 +435,7 @@ public class MainWindow extends JFrame
 			{
 				int offset = (int) offset_top_bottom_spinner.getValue();
 				offset = Math.min(400, Math.max(0, offset));
-				Screen.setRectangle((int) offset_left_right_spinner.getValue(), offset);
+				Screen.setRectangleOffsets((int) offset_left_right_spinner.getValue(), offset);
 			}
 		});
 
@@ -509,7 +505,6 @@ public class MainWindow extends JFrame
 		gbc_lblLeftright.gridx = 1;
 		gbc_lblLeftright.gridy = 6;
 		controlPanel.add(lblLeftright, gbc_lblLeftright);
-
 		offset_left_right_spinner.setFont(fontNorm);
 		offset_left_right_spinner.addChangeListener(new ChangeListener() {
 			@Override
@@ -517,7 +512,7 @@ public class MainWindow extends JFrame
 			{
 				int offset = (int) offset_left_right_spinner.getValue();
 				offset = Math.min(400, Math.max(0, offset));
-				Screen.setRectangle(offset, (int) offset_top_bottom_spinner.getValue());
+				Screen.setRectangleOffsets(offset, (int) offset_top_bottom_spinner.getValue());
 			}
 		});
 
@@ -979,6 +974,37 @@ public class MainWindow extends JFrame
 
 		setVisible(true);
 
+	}
+
+	public void updateDisplayDevices()
+	{
+		int selectedIndex = 0;
+
+		String selectedDevice = Screen.getSelectedDisplayDevice();
+		
+		/* We'll just assume one single actionlistener here, as we've only added one in the constructor */
+		ActionListener[] listeners = displayDevicesComboBox.getActionListeners();
+		displayDevicesComboBox.removeActionListener(listeners[0]);
+		
+		displayDevicesComboBox.removeAllItems();
+
+		for (int i = 0; i < Screen.displayDevices.size(); i++)
+		{
+			DisplayDevice device = Screen.displayDevices.get(i);
+
+			displayDevicesComboBox.addItem(device.humanReadable);
+
+			if (selectedDevice != null && device.id.equals(selectedDevice))
+			{
+				selectedIndex = i;
+			}
+
+		}
+
+		displayDevicesComboBox.setSelectedIndex(selectedIndex);
+		
+		displayDevicesComboBox.addActionListener(listeners[0]);
+		
 	}
 
 	private void setMenu()

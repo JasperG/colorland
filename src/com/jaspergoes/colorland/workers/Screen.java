@@ -10,7 +10,10 @@ import java.awt.Rectangle;
 import java.awt.RenderingHints;
 import java.awt.Robot;
 import java.awt.image.BufferedImage;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.Arrays;
 import javax.swing.ImageIcon;
 import javax.swing.JOptionPane;
 import com.jaspergoes.colorland.MainWindow;
@@ -22,6 +25,7 @@ public class Screen
 {
 	/* Display id-string */
 	private static String displayDeviceSelected;
+	private static String displayDevicePreferred;
 
 	/* Screen rectangle */
 	private static Rectangle rect;
@@ -29,6 +33,10 @@ public class Screen
 	/* Prevent calls to bufferedImage.getWidth() and getHeight() by caching width and height of rect */
 	private static int captureWidth;
 	private static int captureHeight;
+
+	/* Offsets; Part of screen to cut off */
+	private static int rectOffsetX = 0;
+	private static int rectOffsetY = 140;
 
 	/* Blur filter */
 	private static GaussianFilter blurFilter = new GaussianFilter(4);
@@ -82,9 +90,11 @@ public class Screen
 			System.exit(0);
 		}
 
+		/* Set up the gamma correction table */
 		setGammaTable(4d);
 
-		setRectangle(0, 140);
+		/* Set the area of the screen to capture */
+		setRectangle();
 
 		/* When starting up, make sure we have a color and brightness set */
 		Milight.newColor = (int) (Math.random() * 256);
@@ -338,23 +348,35 @@ public class Screen
 
 		}.start();
 
+		/* Start thread observing graphics devices */
+		observeGraphics();
+
 		initialized = true;
 
 	}
 
-	public static void setRectangle(int rectOffsetX, int rectOffsetY)
+	public static void setRectangleOffsets(int rectOffsetX, int rectOffsetY)
+	{
+		Screen.rectOffsetX = rectOffsetX;
+		Screen.rectOffsetY = rectOffsetY;
+
+		setRectangle();
+	}
+
+	private static void setRectangle()
 	{
 		Rectangle rect = new Rectangle(0, 0, 0, 0);
-
 		boolean found = false;
-		// int foundindex = 0;
 
 		while (!found)
 		{
 			displayDevices.clear();
 			int i = 1;
 
-			for (GraphicsDevice gd : GraphicsEnvironment.getLocalGraphicsEnvironment().getScreenDevices())
+			// getGraphicsDevices is a replacement for
+			// for (GraphicsDevice gd : GraphicsEnvironment.getLocalGraphicsEnvironment().getScreenDevices())
+
+			for (GraphicsDevice gd : getGraphicsDevices())
 			{
 				/* Get screen ID */
 				String id = gd.getIDstring();
@@ -362,11 +384,13 @@ public class Screen
 				/* Get current resolution of screen */
 				DisplayMode dm = gd.getDisplayMode();
 
-				if (displayDeviceSelected == null || id.equals(displayDeviceSelected))
+				/* Human readable screen identifier */
+				String humanReadable = i++ + ": " + dm.getWidth() + "x" + dm.getHeight();
+
+				if (displayDeviceSelected == null || ((displayDevicePreferred != null && displayDevicePreferred.equals(humanReadable)) || id.equals(displayDeviceSelected)))
 				{
 					displayDeviceSelected = id;
 					found = true;
-					// foundindex = i - 1;
 
 					/* Bounds of screen */
 					rect = gd.getDefaultConfiguration().getBounds();
@@ -389,31 +413,189 @@ public class Screen
 					rect.setBounds(l, t, w, h);
 				}
 
-				displayDevices.add(new DisplayDevice(id, i++ + ": " + dm.getWidth() + "x" + dm.getHeight()));
+				displayDevices.add(new DisplayDevice(id, humanReadable));
 
 			}
 
-			if (!found) displayDeviceSelected = null;
+			if (!found)
+			{
+				displayDeviceSelected = null;
+			}
+			else
+			{
+				for (DisplayDevice d : displayDevices)
+				{
+					if (d.id.equals(displayDeviceSelected))
+						System.out.println("Selected display device:\n" + d.humanReadable + "\n");
+				}
+			}
 		}
+
+		/* Update selected display device in combobox; First time this is executed MainWindow will not be initialized yet.
+		 * Therefore, updateDisplayDevices must be called in the constructor of MainWindow, as well. Check for null */
+		if (MainWindow.INSTANCE != null)
+			MainWindow.INSTANCE.updateDisplayDevices();
 
 		Screen.rect = rect;
 
-		/* TODO: Set display devices in main window */
+	}
 
-		/* Note to self; this is fugly. */
-		/*		MainWindow.displayDevicesComboBox.removeAllItems();
-				for (int i = 0; i < devices.size(); i++)
+	/**
+	 * A thread that periodically polls all available graphics devices; If
+	 * screen resolution changes, or, a monitor is switched on or off, we want
+	 * to reset the area to capture.
+	 */
+	private static void observeGraphics()
+	{
+
+		new Thread(new Runnable() {
+
+			@Override
+			public void run()
+			{
+
+				String[] oldResolutions = null;
+
+				while (true)
 				{
-					MainWindow.displayDevicesComboBox.addItem(devices.get(i).humanReadable);
+
+					GraphicsDevice[] devices = getGraphicsDevices();
+
+					String[] newResolutions = new String[devices.length];
+
+					int i = 0;
+					for (GraphicsDevice gd : devices)
+					{
+						/* Get current resolution of screen */
+						DisplayMode dm = gd.getDisplayMode();
+
+						/* Save resolution as string */
+						newResolutions[i++] = dm.getWidth() + "x" + dm.getHeight();
+					}
+
+					if (oldResolutions == null)
+					{
+
+						oldResolutions = newResolutions;
+
+					}
+					else if (!Arrays.equals(oldResolutions, newResolutions))
+					{
+						System.out.println("Available display devices changed:\n\tOld: " + Arrays.toString(oldResolutions) + "\n\tNew: " + Arrays.toString(newResolutions) + "\n");
+						oldResolutions = newResolutions;
+
+						setRectangle();
+					}
+
+					try
+					{
+
+						/* Check again in two seconds */
+						Thread.sleep(2000);
+
+					}
+					catch (InterruptedException e)
+					{
+
+						/* No-op */
+
+					}
+
 				}
-				MainWindow.displayDevicesComboBox.setSelectedIndex(foundindex);*/
+
+			}
+
+		}).start();
 
 	}
 
-	public static void setDisplay(int index, int rectOffsetX, int rectOffsetY)
+	/**
+	 * Queries the local graphics environment for the available graphics
+	 * devices. This uses reflection internally. If anything goes wrong with the
+	 * reflective call, a RuntimeException will be thrown.
+	 * 
+	 * @return The available graphics devices.
+	 * @throws RuntimeException
+	 *             If the reflective calls fail
+	 */
+	private static GraphicsDevice[] getGraphicsDevices()
 	{
-		displayDeviceSelected = displayDevices.get(index).id;
-		setRectangle(rectOffsetX, rectOffsetY);
+		GraphicsEnvironment graphicsEnvironment = GraphicsEnvironment.getLocalGraphicsEnvironment();
+		Class<?> c = graphicsEnvironment.getClass();
+		Method getNumScreensMethod = null;
+		boolean getNumScreensMethodWasAccessible = false;
+		Method makeScreenDeviceMethod = null;
+		boolean makeScreenDeviceMethodWasAccessible = false;
+		try
+		{
+			getNumScreensMethod = c.getDeclaredMethod("getNumScreens");
+			getNumScreensMethodWasAccessible = getNumScreensMethod.isAccessible();
+			getNumScreensMethod.setAccessible(true);
+
+			makeScreenDeviceMethod = c.getDeclaredMethod("makeScreenDevice", int.class);
+			makeScreenDeviceMethodWasAccessible = makeScreenDeviceMethod.isAccessible();
+			makeScreenDeviceMethod.setAccessible(true);
+
+			int numScreens = (Integer) getNumScreensMethod.invoke(graphicsEnvironment);
+			GraphicsDevice graphicsDevices[] = new GraphicsDevice[numScreens];
+			for (int i = 0; i < numScreens; i++)
+			{
+				Object object = makeScreenDeviceMethod.invoke(graphicsEnvironment, i);
+				graphicsDevices[i] = (GraphicsDevice) object;
+			}
+			return graphicsDevices;
+		}
+		catch (NoSuchMethodException e)
+		{
+			throw new RuntimeException(e);
+		}
+		catch (SecurityException e)
+		{
+			throw new RuntimeException(e);
+		}
+		catch (IllegalAccessException e)
+		{
+			throw new RuntimeException(e);
+		}
+		catch (IllegalArgumentException e)
+		{
+			throw new RuntimeException(e);
+		}
+		catch (InvocationTargetException e)
+		{
+			throw new RuntimeException(e);
+		}
+		finally
+		{
+			if (getNumScreensMethod != null)
+			{
+				getNumScreensMethod.setAccessible(getNumScreensMethodWasAccessible);
+			}
+			if (makeScreenDeviceMethod != null)
+			{
+				makeScreenDeviceMethod.setAccessible(makeScreenDeviceMethodWasAccessible);
+			}
+		}
+	}
+
+	public static String getSelectedDisplayDevice()
+	{
+		return displayDeviceSelected;
+	}
+
+	public static void setDisplay(int index)
+	{
+		/* Set display as a result of combobox in MainWindow being changed.
+		 * Save displayDevicePreferred, in case monitors get switched off or on later on.
+		 * Remembering the preferred display will never be failsafe as id's returned are
+		 * never uniquely referring to a physical port or monitor.
+		 */
+		DisplayDevice d = displayDevices.get(index);
+
+		displayDeviceSelected = d.id;
+		displayDevicePreferred = d.humanReadable;
+
+		setRectangle();
 	}
 
 	public static void setGammaTable(double gamma)
