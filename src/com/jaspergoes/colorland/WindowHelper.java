@@ -21,7 +21,7 @@ import javax.swing.WindowConstants;
 public final class WindowHelper
 {
 
-	public static final String appVersion = "0.0.8 ( January 22nd 2017 )";
+	public static final String appVersion = "0.0.9 ( November 13th 2017 )";
 
 	public static final String appTitle = "Jasper Goes' to Colorland";
 
