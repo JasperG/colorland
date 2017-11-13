@@ -8,8 +8,6 @@ To simply run, download the application (colorland.jar) from [the build folder](
 
 Java Runtime required.
 
-Like this project? Help me get Milights by making a donation :) [![Donate](https://img.shields.io/badge/Doate-PayPal-green.svg)](https://www.paypal.com/cgi-bin/webscr?cmd=_s-xclick&hosted_button_id=PJ6SSTP5KBHKS)
-
 ### Screenshot of version at 22nd of January 2017
 
 ![Screenshot](https://github.com/JasperG/Colorland/blob/master/screenshot.png)
